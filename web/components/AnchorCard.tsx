@@ -5,6 +5,7 @@ import { CopyButton } from "@/components/CopyButton";
 import { NetworkBadge } from "@/components/NetworkBadge";
 import { PROBE_NAMES, STALE_AFTER_LEDGERS, type AnchorAttestation } from "@/lib/registry";
 import { approxLedgerDuration } from "@/lib/freshness";
+import { anchorCardCopy } from "@/lib/anchor-card-copy";
 import { addressUrl, ledgerUrl, shortAddress } from "@/lib/explorer";
 import type { NetworkId } from "@/lib/network";
 
@@ -28,26 +29,27 @@ export function AnchorCard({
   network: NetworkId;
 }) {
   const stale = anchor.staleness > STALE_AFTER_LEDGERS;
-  // Green requires the capability to be advertised AND probed green AND fresh.
-  const usable = anchor.servesSep31 && !stale;
+  const copy = anchorCardCopy(anchor, stale);
 
   return (
     <Card className="flex flex-col gap-4">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <h3 className="truncate font-mono text-sm font-semibold">{anchor.domain}</h3>
-          <div className="mt-1 text-sm text-secondary-text">
-            {anchor.seps.length ? anchor.seps.map((n) => `SEP-${n}`).join(" · ") : "no SEP endpoints"}
-          </div>
+          <div className="mt-1 text-sm text-secondary-text">{copy.sepsLabel}</div>
         </div>
         <div className="flex shrink-0 flex-col items-end gap-1.5">
-          {usable ? (
+          {copy.badge === "serves-sep31" ? (
             <Badge variant="success">
               <CircleCheck size={12} /> serves SEP-31
             </Badge>
-          ) : anchor.servesSep31 ? (
+          ) : copy.badge === "stale" ? (
             <Badge variant="warning">
               <Clock size={12} /> stale
+            </Badge>
+          ) : copy.badge === "unreachable" ? (
+            <Badge variant="default">
+              <CircleHelp size={12} /> stellar.toml unreachable
             </Badge>
           ) : (
             <Badge variant="default">
@@ -120,10 +122,16 @@ export function AnchorCard({
         </div>
         <div className="flex min-w-0 items-center gap-1">
           <span className="shrink-0">toml sha256</span>
-          <span className="truncate font-mono" title={anchor.tomlHash}>
-            {anchor.tomlHash}
-          </span>
-          <CopyButton value={anchor.tomlHash} label="toml sha256" />
+          {copy.tomlHash ? (
+            <>
+              <span className="truncate font-mono" title={copy.tomlHash}>
+                {copy.tomlHash}
+              </span>
+              <CopyButton value={copy.tomlHash} label="toml sha256" />
+            </>
+          ) : (
+            <span className="font-mono text-secondary-text" title="stellar.toml was never fetched">—</span>
+          )}
         </div>
       </div>
     </Card>

@@ -56,14 +56,12 @@ an anchor is not attested, when its attestation is older than the staleness
 bound, or when the registry cannot be reached. An unreachable registry is
 "unknown", never "proceed".
 
-**Known gap.** The first-run call to `resolve()` is not wrapped in a `try`.
-The run has already been claimed in state `created` at that point, so an
-exception from `resolve()` propagates out of `execute()` and the run stays
-`created` instead of moving to `failed`. Callers must handle a rejected
-promise and must not treat `created` as terminal. This is tracked by the issue
-"execute() strands a run in `created` when RouteResolver.resolve() throws".
-When the engine turns the throw into a failed outcome, this section will say
-so.
+Both calls go through `resolveRoute()` in `packages/engine/src/run.ts`, which
+catches any thrown error and turns it into a non-retryable `ROUTE_REFUSED`
+failure (`retryable: false`). On the first run of `execute()`, that failure
+moves the run to terminal `failed` through `failRun()` so retries do not hit an
+idempotency conflict. On `resumeRun()`, pre-open runs move to `failed`, while
+later states where money may already be in flight stay untouched and resumable.
 
 ### Trust
 
@@ -96,6 +94,48 @@ changelog entry.
   TSDoc before removal.
 - Adding an optional field is not breaking. Making a field required, or
   changing what an existing value means, is.
+
+## Filtering candidates by evidence
+
+A planner that proposes routes must never offer an anchor the registry cannot
+vouch for. `filterByEvidence` is that step: it applies the same rules as
+`RegistryRouteResolver` to a list of candidates and, instead of throwing on the
+first refusal, says why each dropped candidate was dropped.
+
+```ts
+import { filterByEvidence } from "@corridor/router";
+
+const { kept, dropped } = await filterByEvidence(
+  [
+    { domain: "anchor-a.example", protocol: "sep31" },
+    { domain: "anchor-b.example", protocol: "sep6" },
+  ],
+  { registry, maxStalenessLedgers: 120_960 },
+);
+// dropped: [{ candidate, reason }]
+```
+
+- A candidate is any object with `domain` (the anchor's home domain) and
+  `protocol` (`sep31`, `sep6` or `custom:<id>`). Extra fields are carried
+  through, and `kept` and `dropped` keep input order.
+- `registry` is an `AttestationSource` or a `LegacyAttestationSource`, the
+  same sources `RegistryRouteResolver` accepts. `maxStalenessLedgers`
+  defaults to 120,960 ledgers (about a week at 5s ledgers), the resolver's
+  default.
+- `reason` is one of `"not attested"` (no attestation for that protocol,
+  including a domain the registry has never seen), `"stale attestation"`,
+  `"protocol not attestable"` (a `custom:` lane has no on-chain probe) and
+  `"registry unreachable"`. A registry that cannot be read drops every
+  candidate; it never keeps one.
+- There is no `allowUnattestedDomains` here. That escape hatch belongs to the
+  resolver, for lanes an operator has deliberately exempted; a planner only
+  recommends anchors with evidence.
+
+Both the filter and the resolver call `checkAttestation(registry, domain,
+protocol, maxStalenessLedgers?)`, which is exported for callers that need the
+single-domain answer. It never throws: it returns `{ ok: true }` or
+`{ ok: false, reason, detail }`, where `detail` is the operator-facing message
+`UnattestedAnchorError` carries.
 
 ## The module contract
 

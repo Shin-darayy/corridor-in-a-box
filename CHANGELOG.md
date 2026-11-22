@@ -7,6 +7,54 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once it reache
 
 ## [Unreleased]
 
+### Added — a custody statement ([#707](https://github.com/corridor-in-a-box/corridor-in-a-box/issues/707))
+
+- `docs/custody.md` says in one place that the project never holds funds or a key that can
+  move them: who holds the money at each step of a payment, the one key on the money path and
+  who holds it, what the project does and does not do, and the keys it does hold (attester,
+  registry admin, testnet CI seeds), none of which can move money. Linked from the README.
+### Added — onboarding exporter framework ([#639](https://github.com/corridor-in-a-box/corridor-in-a-box/issues/639))
+
+- `@corridor/adapter-kit` exports a minimal `BusinessProfile`, the `OnboardingExporter`
+  interface and `createExporterRegistry()`, which rejects malformed and duplicate ids. An
+  exporter maps the profile onto one receiver's own onboarding form.
+  `examples/onboarding/example-receiver-exporter.ts` is a reference exporter, and
+  `docs/onboarding-exporters.md` explains how to add one.
+### Added — SEP-10 lane check with the business's own key ([#631](https://github.com/corridor-in-a-box/corridor-in-a-box/issues/631))
+
+- `checkLane(corridor, { signer, fetchImpl?, timeoutMs? })` in `@corridor/router` runs
+  a real SEP-10 challenge/response against the corridor's receiving anchor with the
+  business's own signer and reports `open` (a JWT was issued), `closed` (the anchor
+  answered 401 or 403) or `unknown` (no `web_auth` endpoint, timeout, 5xx, malformed
+  response). A 400 stays `unknown`: it can mean our own malformed challenge, not an
+  onboarding refusal. The check moves no money and returns no JWT — the credential is
+  discarded, never logged or reported.
+- `tests/lane-check.test.ts` drives stub anchors that accept and refuse the signed
+  challenge, plus server-error, unreachable and no-endpoint cases; it also asserts the
+  JWT never reaches the result. Design context in `docs/rfcs/0004-smart-router.md`.
+### Added — error screens for the testnet send app ([#691](https://github.com/corridor-in-a-box/corridor-in-a-box/issues/691))
+
+- `web/components/SendErrorState.tsx` renders a screen for each way a payment cannot go ahead: no routes,
+  every route dropped (listing each route and its reason), the locked price expired, and the payment failed.
+- `web/lib/send-errors.ts` holds the wording. A failed payment is worded from its error code alone, so
+  anchor URLs and upstream response bodies in the raw message are never shown.
+- `tests/web-send-errors.test.ts` covers each state.
+### Added — live crash-resume scenario against the reference anchor ([#677](https://github.com/corridor-in-a-box/corridor-in-a-box/issues/677))
+
+- `pnpm verify:crash-resume` kills the service with `SIGKILL` after the payment has settled on
+  testnet, restarts it on the same Postgres and requires the run to reach `completed` with the
+  same transaction hash. It also checks Horizon for exactly one matching payment transaction.
+- The `reference-crash-resume` workflow runs it daily and on demand, writes the result to the
+  job summary and uploads the service and anchor logs on failure.
+### Added — a schema for `contracts/deployments.json` and the testnet upgrade record ([#701](https://github.com/corridor-in-a-box/corridor-in-a-box/issues/701))
+
+- `contracts/deployments.schema.json` describes deployments and upgrades (wasm hash, transaction
+  hash, date and ledger). `public` stays valid with null addresses, and a network that records a
+  contract must also record `deployedAt`.
+- `contracts/deployments.json` records the 2026-11-17 testnet `upgrade()` of the registry and the
+  attester. The hashes were read from the testnet ledger, not estimated.
+- `tests/deployments.test.ts` validates the file and checks that missing or malformed fields fail.
+
 ### Fixed — stale documentation and comments
 
 - Docs said no transition enters `refund_pending` and that `refunded` is reachable only when
@@ -25,6 +73,16 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once it reache
   points at the closed #196 as pending: it says there is no indicative-price path, which is
   what the firm-quote-only adapter actually does. The `sep6` no-quote-server message changed
   accordingly.
+
+### Added — a pilot readiness checklist ([#703](https://github.com/corridor-in-a-box/corridor-in-a-box/issues/703))
+
+- `docs/pilot-readiness.md` is the list a licensed sending partner works through before a
+  first real payment and while a pilot runs: who is responsible for what (the partner holds
+  the licence, the key and the funds), then keys, limits, safety gates, monitoring, refunds
+  and a rehearsal, each item taken from the runbook, the key-management guide or the threat
+  model, with a table mapping it back to the threat model. It records that `corridor canary`
+  signs with a raw seed and has no KMS option, and how to canary without taking the
+  distribution account's key out of the vault. Linked from the runbook.
 
 ### Added — every library package builds to `dist/` with type declarations ([#262](https://github.com/corridor-in-a-box/corridor-in-a-box/issues/262))
 
@@ -92,6 +150,20 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once it reache
   provenance and an SBOM, after the same smoke test. Actions pinned by SHA.
 - Not yet run on a Docker daemon by the author; the CI `docker` job is the first build.
 
+### Added — five Asia-Pacific anchors in the fleet ([#666](https://github.com/corridor-in-a-box/corridor-in-a-box/issues/666))
+
+- `contracts/anchors.json` gains `audd.digital` (Novatti's AUDD, Australia),
+  `cebuanalhuillier.com` (Cebuana, Philippines), `perahub.com.ph` (PeraHub, Philippines),
+  `ripplefox.com` (RippleFox, a CNY issuer) and `fchain.io` (FChain's Firefly). The first
+  three come from the Stellar Anchor Directory and the last two from the `stellar.toml` on
+  their own sites. The file's `$comment` records the source and the 2026-11-20 probe result
+  for each.
+- What the probe found: `fchain.io` passes `toml_fetch` and `sep6_info`; `audd.digital` and
+  `ripplefox.com` publish a toml with no SEP endpoint; `cebuanalhuillier.com` (HTTP 404) and
+  `perahub.com.ph` (its certificate does not validate) publish none, so the SEP-31 the
+  directory lists for them is unverified. No corridor manifest is added.
+- `docs/mainnet-registry.md` restates the fee budget for a 24-anchor fleet.
+
 ### Added — `@corridor/otel`, OpenTelemetry adapters for `Metrics` and `Logger` ([#273](https://github.com/corridor-in-a-box/corridor-in-a-box/issues/273))
 
 - New package `@corridor/otel`: `otelMetrics(meter)` (counter per name for `increment`,
@@ -101,6 +173,27 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once it reache
   nothing from OpenTelemetry.
 - `tests/otel.test.ts` uses the SDK's `InMemoryMetricExporter` and asserts counter and
   histogram values after an `execute()` run. Wiring example in `docs/operations.md` §7.
+
+### Added — the registry stores each anchor's SEP-31 receive limits ([#669](https://github.com/corridor-in-a-box/corridor-in-a-box/issues/669))
+
+- The probe records the `min_amount` and `max_amount` a SEP-31 `/info` response states
+  beside each receive asset (`ProbeResult.receiveLimits`), the attester writes them
+  (`attest_receive`, `AnchorAttester.attestReceive`), and the registry stores them under a
+  new key and answers `get_receive(domain)` and `receive_limits(domain, code)`
+  (`AnchorRegistry.getReceive`, `receiveLimits`). A planner can now rule a lane out by amount
+  without calling the anchor.
+- Storage is additive. `DataKey::Receive` is appended and no existing entry changes shape:
+  a stored struct is decoded by its exact set of fields, so a field added to `AnchorMeta`
+  would have made every metadata entry written before it unreadable. Two contract tests hold
+  that in place.
+- Amounts are `Option<i128>` scaled by 10^7 and nothing is rounded. A bound that cannot be
+  written exactly (negative, more than seven decimal places, a float with more digits than
+  it keeps) is left out, and "not recorded" is never read back as zero. A minimum above the
+  maximum is stored as observed.
+- Contracts deployed before this have no such method. `pnpm attest` still writes the bitmaps
+  and the metadata, skips the limits and warns once; `getReceive` returns `null`. Upgrade the
+  registry, then the attester, to start recording. Decision 6 in `docs/registry-metadata.md`
+  has the reasoning.
 
 ### Added — AWS KMS and Google Cloud KMS `ExternalSigner`s ([#277](https://github.com/corridor-in-a-box/corridor-in-a-box/issues/277))
 
@@ -113,6 +206,19 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once it reache
   `docs/key-management.md`.
 - Tested with fake clients that sign with a real local ed25519 key, through
   `assertSignerProducesValidSignatures`.
+
+### Added — the threat model covers the route planner ([#704](https://github.com/corridor-in-a-box/corridor-in-a-box/issues/704))
+
+- `docs/threat-model.md` gains the trust boundary "3.4 Planner ↔ Price Sources, Route Options
+  and Lane Checks": 27 threats across the rate history, route options and lane checks, among
+  them a manipulated price source, a tampered route option and a stale lane check. Each names
+  the code on `main` that already answers it or the issue that will. The attester boundary
+  moves to 3.5, the boundary diagram shows the planner, and the actors table gains a rate
+  source.
+- The section cites code by file and symbol, not by line number, so an edit elsewhere in a
+  file does not strand a reference. `tests/threat-model-planner.test.ts` fails when a cited
+  symbol or file is gone, an issue reference has no link, or a threat is left with neither a
+  mitigation nor an issue.
 
 ### Added — one tag releases every public package ([#263](https://github.com/corridor-in-a-box/corridor-in-a-box/issues/263))
 

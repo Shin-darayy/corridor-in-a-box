@@ -11,6 +11,10 @@ running migrations, and the project's versioning/release policy.
 > Treat this runbook as the plan for a self-run testnet/close-beta pilot, not a
 > claim of production-readiness.
 
+A licensed partner preparing a pilot with real money should work through
+[pilot-readiness.md](./pilot-readiness.md), which puts this runbook, the key-management guide
+and the threat model into one checklist.
+
 ## 0. Adding an anchor to the fleet
 
 `contracts/anchors.json` is the fleet's curated list of anchors. It is **not**
@@ -257,6 +261,30 @@ Exit codes are distinct so CI can tell the cases apart: `2` missing
 `CORRIDOR_SIGNER_SECRET`, `3` refused (mainnet manifest, or a bridge asset the
 anchor does not quote), `4` the stack is not fit (`doctor` failed), `5` the
 corridor ran and did not complete.
+
+### `pnpm verify:crash-resume` — kill the service after settle
+
+```bash
+scripts/reference-anchor.sh up
+DATABASE_URL=postgres://… CORRIDOR_SIGNER_SECRET=S… pnpm verify:crash-resume
+```
+
+The live counterpart of `tests/integration/crash-resume.test.ts`. It starts
+`examples/run-service.ts` on Postgres, begins a payment, and sends `SIGKILL` to the
+service once the run holds a settlement transaction hash and is not yet
+`completed`. It then starts the service again on the same database, posts the same
+body, and requires `completed` with the same transaction hash and exactly one
+matching payment transaction from the signer on Horizon.
+
+The driver starts `payout-watch` itself, after the kill. The anchor only pays out when
+called, so the run cannot finish while the service is down. Run the script without
+a separate watcher.
+
+It uses the same exit codes as `verify:corridor`, with `5` meaning the run did not
+resume to one completed transaction. The service listens on `SERVICE_PORT` (default
+`8787`), service and watcher logs go to `LOG_DIR` (default `crash-resume-logs`),
+and the result is appended to `$GITHUB_STEP_SUMMARY` when that is set. The
+`reference-crash-resume` workflow runs it daily and on demand.
 
 **The signer** must be a testnet account holding the corridor's bridge asset with
 a trustline for it — `op_src_no_trust` above is exactly what a missing trustline
